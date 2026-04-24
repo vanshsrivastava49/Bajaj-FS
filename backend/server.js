@@ -1,138 +1,159 @@
 const express = require('express');
 const cors = require('cors');
-
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.use(cors({ origin: '*' })); 
+app.use(express.json()); 
 
-const analyzeGraphData = (inputArray) => {
-    if (!Array.isArray(inputArray)) {
-        return { error: "Payload 'data' must be an array." };
-    }
+function evaluateHierarchies(inputList) {
+    if (!Array.isArray(inputList)) throw new Error("Payload must be an array.");
 
-    const invalid_entries = [];
-    const duplicate_edges = [];
-    const trackedEdges = new Set();
-    
-    const adjacencyList = {};
-    const inDegree = {};
-    const uniqueVertices = new Set();
+    const badEntries = [];
+    const repeatedLinks = [];
+    const processedPairs = new Set();
 
-    // Phase 1: Edge Validation & Duplicate Filtering
-    const validConnections = [];
-    for (const item of inputArray) {
-        const cleanStr = typeof item === 'string' ? item.trim() : "";
-        const edgePattern = /^([A-Z])->([A-Z])$/;
-        const matchResult = cleanStr.match(edgePattern);
+    const childMapping = new Map();
+    const parentCounts = new Map();
+    const uniquePoints = new Set();
 
-        if (!matchResult || matchResult[1] === matchResult[2]) {
-            invalid_entries.push(item);
+    const structureResults = [];
+    let validTreeCount = 0;
+    let cycleCount = 0;
+    let highestDepth = 0;
+    let topRootNode = "";
+
+    const validLinks = [];
+    for (const rawItem of inputList) {
+        const strVal = typeof rawItem === 'string' ? rawItem.trim() : "";
+        
+        const formatCheck = /^([A-Z])->([A-Z])$/.test(strVal);
+
+        if (!formatCheck) {
+            badEntries.push(rawItem);
             continue;
         }
 
-        const [_, p, c] = matchResult;
+        const pNode = strVal[0];
+        const cNode = strVal[3];
 
-        if (trackedEdges.has(cleanStr)) {
-            if (!duplicate_edges.includes(cleanStr)) duplicate_edges.push(cleanStr);
+        if (pNode === cNode) {
+            badEntries.push(rawItem);
             continue;
         }
-        trackedEdges.add(cleanStr);
-        validConnections.push({ p, c, raw: cleanStr });
+        if (processedPairs.has(strVal)) {
+            if (!repeatedLinks.includes(strVal)) repeatedLinks.push(strVal);
+            continue;
+        }       
+        
+        processedPairs.add(strVal);
+        validLinks.push({ pNode, cNode });
     }
 
-    // Phase 2: Directed Graph Construction (handling multi-parent rule)
-    for (const { p, c } of validConnections) {
-        if (inDegree[c] > 0) continue; // First parent wins, discard others silently
-
-        if (!adjacencyList[p]) adjacencyList[p] = [];
-        adjacencyList[p].push(c);
-
-        inDegree[c] = (inDegree[c] || 0) + 1;
-        if (inDegree[p] === undefined) inDegree[p] = 0;
-
-        uniqueVertices.add(p);
-        uniqueVertices.add(c);
+    for (const { pNode, cNode } of validLinks) {
+        if ((parentCounts.get(cNode) || 0) > 0) continue;
+        
+        if (!childMapping.has(pNode)) childMapping.set(pNode, []);
+        childMapping.get(pNode).push(cNode);
+        
+        parentCounts.set(cNode, (parentCounts.get(cNode) || 0) + 1);
+        if (!parentCounts.has(pNode)) parentCounts.set(pNode, 0);
+        
+        uniquePoints.add(pNode).add(cNode);
     }
 
-    // Identify absolute roots or fallback to lexicographical smallest for pure cycles
-    let originNodes = Array.from(uniqueVertices).filter(v => inDegree[v] === 0);
-    if (originNodes.length === 0 && uniqueVertices.size > 0) {
-        originNodes = [Array.from(uniqueVertices).sort()[0]];
-    }
+    const overallVisited = new Set();
 
-    const hierarchies = [];
-    let total_trees = 0;
-    let total_cycles = 0;
-    let largest_tree_root = "";
-    let max_depth = 0;
-
-    // Phase 3: DFS Traversal for Tree Building & Cycle Detection
-    for (const rootNode of originNodes) {
-        const pathStack = new Set();
-        let cycleFound = false;
-
-        const traverseAndBuild = (currentNode) => {
-            if (pathStack.has(currentNode)) {
-                cycleFound = true;
-                return { sub: {}, d: 0 };
+    const walkGraph = (startPoint) => {
+        const currentStack = new Set();
+        const branchVisited = new Set();
+        let foundCycle = false;
+        const dive = (curr) => {
+            if (currentStack.has(curr)) {
+                foundCycle = true;
+                return { layout: {}, depthScore: 0 };
             }
-            pathStack.add(currentNode);
-
-            const childrenObj = {};
-            let deepestChild = 0;
-
-            const neighbors = adjacencyList[currentNode] || [];
-            neighbors.sort().forEach(neighbor => {
-                const { sub, d } = traverseAndBuild(neighbor);
-                childrenObj[neighbor] = sub;
-                deepestChild = Math.max(deepestChild, d);
+            
+            currentStack.add(curr);
+            branchVisited.add(curr);
+            const levelContent = {};
+            let peakDepth = 0;
+            const nextNodes = childMapping.get(curr) || [];
+            nextNodes.sort().forEach(n => {
+                const res = dive(n);
+                levelContent[n] = res.layout;
+                peakDepth = Math.max(peakDepth, res.depthScore);
             });
 
-            pathStack.delete(currentNode);
-            return { sub: childrenObj, d: 1 + deepestChild };
+            currentStack.delete(curr);
+            return { layout: levelContent, depthScore: 1 + peakDepth };
         };
+        
+        const { layout, depthScore } = dive(startPoint);
+        return { foundCycle, layout, depthScore, branchVisited };
+    };
+    let originPoints = Array.from(uniquePoints).filter(pt => parentCounts.get(pt) === 0);
+    originPoints.sort(); 
 
-        const { sub: treeStructure, d: treeDepth } = traverseAndBuild(rootNode);
+    for (const rootPt of originPoints) {
+        const { foundCycle, layout, depthScore, branchVisited } = walkGraph(rootPt);
+        branchVisited.forEach(n => overallVisited.add(n)); 
 
-        if (cycleFound) {
-            total_cycles++;
-            hierarchies.push({ root: rootNode, tree: {}, has_cycle: true });
+        if (foundCycle) {
+            cycleCount++;
+            structureResults.push({ root: rootPt, tree: {}, has_cycle: true }); 
         } else {
-            total_trees++;
-            hierarchies.push({ root: rootNode, tree: { [rootNode]: treeStructure }, depth: treeDepth });
-
-            // Tiebreaker algorithm
-            if (treeDepth > max_depth || (treeDepth === max_depth && (largest_tree_root === "" || rootNode < largest_tree_root))) {
-                max_depth = treeDepth;
-                largest_tree_root = rootNode;
+            validTreeCount++;
+            structureResults.push({ root: rootPt, tree: { [rootPt]: layout }, depth: depthScore }); 
+            
+            if (depthScore > highestDepth || (depthScore === highestDepth && (topRootNode === "" || rootPt < topRootNode))) {
+                highestDepth = depthScore;
+                topRootNode = rootPt;
             }
         }
     }
 
+    let leftoverPoints = Array.from(uniquePoints).filter(pt => !overallVisited.has(pt));
+    
+    while (leftoverPoints.length > 0) {
+        leftoverPoints.sort();
+        const cycleStart = leftoverPoints[0];
+        
+        const { foundCycle, layout, branchVisited } = walkGraph(cycleStart);
+        branchVisited.forEach(n => overallVisited.add(n));
+        cycleCount++;
+        structureResults.push({ root: cycleStart, tree: {}, has_cycle: true }); 
+        leftoverPoints = Array.from(uniquePoints).filter(pt => !overallVisited.has(pt));
+    }
     return {
-        "user_id": "yourfullname_ddmmyyyy",       // UPDATE THIS
-        "email_id": "your.email@college.edu",     // UPDATE THIS
-        "college_roll_number": "YOUR_ROLL",       // UPDATE THIS
-        "hierarchies": hierarchies,
-        "invalid_entries": invalid_entries,
-        "duplicate_edges": duplicate_edges,
-        "summary": { total_trees, total_cycles, largest_tree_root }
+        "user_id": "vanshsrivastava_04092004",
+        "email_id": "vs1743@srmist.edu.in", 
+        "college_roll_number": "RA2311003011846",
+        "hierarchies": structureResults,
+        "invalid_entries": badEntries,
+        "duplicate_edges": repeatedLinks,
+        "summary": { 
+            total_trees: validTreeCount, 
+            total_cycles: cycleCount, 
+            largest_tree_root: topRootNode 
+        }
     };
-};
-
+}
 app.post('/bfhl', (req, res) => {
     try {
-        const payload = req.body.data;
-        if (!payload) {
+        const inputData = req.body.data;
+        
+        if (!inputData) {
             return res.status(400).json({ error: "Missing 'data' array in payload." });
         }
-        res.status(200).json(analyzeGraphData(payload));
-    } catch (err) {
-        res.status(500).json({ error: "Server processing error" });
+        
+        // Process the data and send the response
+        const finalOutput = evaluateHierarchies(inputData);
+        res.status(200).json(finalOutput);
+        
+    } catch (error) {
+        res.status(500).json({ error: error.message || "Internal Server Error" });
     }
 });
-
-const APP_PORT = process.env.PORT || 3000;
-app.listen(APP_PORT, () => {
-    console.log(`Server actively listening on port ${APP_PORT}`);
+const SERVER_PORT = process.env.PORT || 3000;
+app.listen(SERVER_PORT, () => {
+    console.log(`backend is up on ${SERVER_PORT}`);
 });
