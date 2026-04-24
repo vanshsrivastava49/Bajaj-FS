@@ -145,7 +145,6 @@ app.post('/bfhl', (req, res) => {
             return res.status(400).json({ error: "Missing 'data' array in payload." });
         }
         
-        // Process the data and send the response
         const finalOutput = evaluateHierarchies(inputData);
         res.status(200).json(finalOutput);
         

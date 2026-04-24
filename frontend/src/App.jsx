@@ -11,7 +11,6 @@ const HERO_PHRASES = [
   "Build Trees.",
 ];
 
-// Recursive Tree Node Visualizer
 function NodeVisualizer({ label, subNodes, currentDepth = 0 }) {
   const [isOpen, setIsOpen] = useState(true);
   const isBranch = subNodes && Object.keys(subNodes).length > 0;
@@ -46,7 +45,6 @@ function NodeVisualizer({ label, subNodes, currentDepth = 0 }) {
   );
 }
 
-// Card for Each Hierarchy
 function DataCard({ dataObj, index }) {
   const isCycle = dataObj.has_cycle === true;
   const childrenList = dataObj.tree && !isCycle ? Object.entries(dataObj.tree) : [];
@@ -250,14 +248,12 @@ export default function App() {
         }
       `}</style>
 
-      {/* Navbar */}
       <nav className="navbar">
         <div className="nav-logo">
           <Network size={24} /> GraphInspector
         </div>
       </nav>
 
-      {/* Hero Section */}
       <section className="hero-section">  
         <h1 className="hero-title">
           <span className="hero-title-static">Intelligent API to</span>
@@ -267,12 +263,7 @@ export default function App() {
             </span>
           </span>
         </h1>
-        <p className="hero-subtitle">
-          Submit your directed graph data. Our God-level backend will construct trees, trace multi-parent edges, and detect deeply nested cyclic dependencies in milliseconds.
-        </p>
       </section>
-
-      {/* Input Editor */}
       <div className="editor-container animate-fade">
         <div className="editor-header">
           <div className="mac-dot" style={{ background: '#ef4444' }} />
@@ -291,7 +282,6 @@ export default function App() {
             className="textarea-styled"
             placeholder='{"data": ["A->B"]}'
           />
-          
           <button onClick={executeRequest} disabled={isLoading} className="submit-btn">
             {isLoading ? (
               <><Activity className="animate-spin" size={20} /> Processing Graph...</>
@@ -299,7 +289,6 @@ export default function App() {
               <><Play size={20} /> Run Analysis</>
             )}
           </button>
-          
           {clientError && (
             <div className="error-banner">
               <AlertCircle size={20} /> {clientError}
@@ -307,12 +296,9 @@ export default function App() {
           )}
         </div>
       </div>
-
-      {/* Results */}
       {serverData && (
         <div className="results-section" ref={anchorRef}>
           
-          {/* Stats */}
           {statBlock && (
             <div className="stats-grid animate-fade">
               <div className="stat-card">
@@ -330,7 +316,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Navigation Tabs */}
           <div className="tabs-row animate-fade">
             <button className={`tab-btn ${tab === 'visual' ? 'active' : ''}`} onClick={() => setTab('visual')}>
               <Network size={16} /> Hierarchies
@@ -343,7 +328,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Tab Views */}
           <div className="animate-fade">
             {tab === 'visual' && (
               <div>
